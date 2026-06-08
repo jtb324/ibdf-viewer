@@ -23,13 +23,13 @@ const (
 // Styles for the TUI
 var (
 	// Colors
-	purple = lipgloss.Color("#7D56F4")
-	darkGray = lipgloss.Color("#242424")
+	purple    = lipgloss.Color("#7D56F4")
+	darkGray  = lipgloss.Color("#242424")
 	lightGray = lipgloss.Color("#D3D3D3")
-	dimGray = lipgloss.Color("#707070")
-	green = lipgloss.Color("#00FF66")
-	red = lipgloss.Color("#FF3366")
-	yellow = lipgloss.Color("#FFCC00")
+	dimGray   = lipgloss.Color("#707070")
+	green     = lipgloss.Color("#00FF66")
+	red       = lipgloss.Color("#FF3366")
+	yellow    = lipgloss.Color("#FFCC00")
 
 	// Component Styles
 	titleStyle = lipgloss.NewStyle().
@@ -71,33 +71,33 @@ var (
 
 // Model represents the main UI state
 type Model struct {
-	reader        *ibdf.Reader
-	filePath      string
-	samples       []string
-	
+	reader   *ibdf.Reader
+	filePath string
+	samples  []string
+
 	// Navigation state
 	currIndex     int
 	totalIndices  int
 	currActiveSet ibdf.ActiveSet
-	activePairs   []ibdf.IBDPair // sorted list of active pairs
+	activePairs   []ibdf.IBDPair   // sorted list of active pairs
 	deltaBlock    *ibdf.DeltaBlock // loaded if current is delta
-	
+
 	// Scroll and selection
-	cursorIndex   int // index of highlighted row in the list
-	scrollOffset  int // how many rows scrolled down
-	windowWidth   int
-	windowHeight  int
+	cursorIndex  int // index of highlighted row in the list
+	scrollOffset int // how many rows scrolled down
+	windowWidth  int
+	windowHeight int
 
 	// Modes
-	mode          viewMode
-	
+	mode viewMode
+
 	// Search/Filter state
-	searchActive  bool
-	searchBuffer  string
-	searchFilter  string // active filter text
-	searchError   string
-	
-	err           error
+	searchActive bool
+	searchBuffer string
+	searchFilter string // active filter text
+	searchError  string
+
+	err error
 }
 
 // NewModel initializes the Bubble Tea model
@@ -455,7 +455,7 @@ func (m *Model) View() string {
 	var s strings.Builder
 
 	// 1. Header Bar
-	headerTitle := fmt.Sprintf(" IBDF Viewer v3: %s ", filepath.Base(m.filePath))
+	headerTitle := fmt.Sprintf(" IBDF Viewer: %s ", filepath.Base(m.filePath))
 	headerBar := titleStyle.Render(headerTitle)
 	spacer := strings.Repeat(" ", m.max(0, m.windowWidth-lipgloss.Width(headerBar)-20))
 	helpHint := dimStyle.Render("[?: Help] [q: Quit] ")
@@ -467,11 +467,11 @@ func (m *Model) View() string {
 	if entry.IsCheckpoint() {
 		blockTypeStr = "CHECKPOINT"
 	}
-	
+
 	activeCount := len(m.activePairs)
 	metaLine1 := fmt.Sprintf("Breakpoint: %d / %d | Position: %s bp | Block Type: %s",
 		m.currIndex+1, m.totalIndices, m.formatNumber(entry.BpPos), blockTypeStr)
-	
+
 	var metaLine2 string
 	if entry.IsCheckpoint() {
 		metaLine2 = fmt.Sprintf("Active Pairs: %d", activeCount)
@@ -605,7 +605,7 @@ func (m *Model) renderDeltaView(height int) string {
 		s1 := m.sampleName(p.P1)
 		s2 := m.sampleName(p.P2)
 		cmStr := fmt.Sprintf("%.4f", p.CM)
-		
+
 		typeStr := "- DEL"
 		typeStyle := delStyle
 		if isAdd {
@@ -718,4 +718,3 @@ func (m *Model) formatNumber(n uint64) string {
 func (m *Model) SetIndex(newIdx int) error {
 	return m.setIndex(newIdx)
 }
-

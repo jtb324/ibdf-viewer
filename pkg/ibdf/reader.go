@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"os"
 )
 
 // Header represents the 64-byte IBDF v3 file header.
@@ -51,8 +52,20 @@ type Reader struct {
 	Index  []IndexEntry
 }
 
+// We need to make sure that the r io.ReaderAt is closed
+// func (r *Reader) Close() {
+// 	r.r.Close()
+// }
+
 // NewReader validates the header of the IBDF file, reads the position index, and returns a new Reader.
-func NewReader(r io.ReaderAt) (*Reader, error) {
+func NewReader(filepath string) (*Reader, error) {
+	// open the initial reader
+	r, err := os.Open(filepath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to open file %s: %v\n", filepath, err)
+		os.Exit(1)
+	}
+
 	// 1. Read and parse file header (64 bytes)
 	var hdr Header
 	headerReader := io.NewSectionReader(r, 0, 64)
