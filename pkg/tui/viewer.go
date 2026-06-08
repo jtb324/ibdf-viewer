@@ -20,6 +20,14 @@ const (
 	modeHelp
 )
 
+type deltaFilter int
+
+const (
+	filterBoth deltaFilter = iota
+	filterAddsOnly
+	filterDelsOnly
+)
+
 // Styles for the TUI
 var (
 	// Colors
@@ -89,7 +97,8 @@ type Model struct {
 	windowHeight int
 
 	// Modes
-	mode viewMode
+	mode        viewMode
+	deltaFilter deltaFilter
 
 	// Search/Filter state
 	searchActive bool
@@ -224,6 +233,50 @@ func (m *Model) setIndex(newIdx int) error {
 	return nil
 }
 
+type deltaItem struct {
+	IsAdd bool
+	Pair  ibdf.IBDPair
+}
+
+func (m *Model) getFilteredDeltas() []deltaItem {
+	if m.deltaBlock == nil {
+		return nil
+	}
+
+	filterLower := strings.ToLower(m.searchFilter)
+	items := make([]deltaItem, 0)
+
+	// Process Adds
+	if m.deltaFilter == filterBoth || m.deltaFilter == filterAddsOnly {
+		for _, p := range m.deltaBlock.Adds {
+			if filterLower != "" {
+				s1 := strings.ToLower(m.sampleName(p.P1))
+				s2 := strings.ToLower(m.sampleName(p.P2))
+				if !strings.Contains(s1, filterLower) && !strings.Contains(s2, filterLower) {
+					continue
+				}
+			}
+			items = append(items, deltaItem{IsAdd: true, Pair: p})
+		}
+	}
+
+	// Process Dels
+	if m.deltaFilter == filterBoth || m.deltaFilter == filterDelsOnly {
+		for _, p := range m.deltaBlock.Dels {
+			if filterLower != "" {
+				s1 := strings.ToLower(m.sampleName(p.P1))
+				s2 := strings.ToLower(m.sampleName(p.P2))
+				if !strings.Contains(s1, filterLower) && !strings.Contains(s2, filterLower) {
+					continue
+				}
+			}
+			items = append(items, deltaItem{IsAdd: false, Pair: p})
+		}
+	}
+
+	return items
+}
+
 // getFilteredPairs returns pairs matching search filter
 func (m *Model) getFilteredPairs() []ibdf.IBDPair {
 	if m.searchFilter == "" {
@@ -313,6 +366,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			m.scrollUp(1)
 
+		case "t":
+			if m.mode == modeDeltas {
+				m.deltaFilter = (m.deltaFilter + 1) % 3
+				m.cursorIndex = 0
+				m.scrollOffset = 0
+			}
+
 		case "pgdown", " ", "d": // wait, 'd' is toggle delta view. Let's make Space / PageDown scroll by page
 			if msg.String() == "d" {
 				if m.mode == modeActivePairs {
@@ -393,10 +453,7 @@ func (m *Model) scrollUp(amount int) {
 
 func (m *Model) getListLength() int {
 	if m.mode == modeDeltas {
-		if m.deltaBlock == nil {
-			return 0
-		}
-		return len(m.deltaBlock.Adds) + len(m.deltaBlock.Dels)
+		return len(m.getFilteredDeltas())
 	}
 	return len(m.getFilteredPairs())
 }
@@ -487,6 +544,14 @@ func (m *Model) View() string {
 	if m.searchFilter != "" {
 		metaLine2 += fmt.Sprintf(" (Filter: \"%s\")", m.searchFilter)
 	}
+	if m.mode == modeDeltas {
+		switch m.deltaFilter {
+		case filterAddsOnly:
+			metaLine2 += " (Type: ADDs only)"
+		case filterDelsOnly:
+			metaLine2 += " (Type: DELs only)"
+		}
+	}
 
 	s.WriteString(headerStyle.Render(metaLine1) + "\n")
 	s.WriteString(headerStyle.Render(metaLine2) + "\n\n")
@@ -565,6 +630,11 @@ func (m *Model) renderDeltaView(height int) string {
 		return "  Checkpoint block contains full active set. No delta changes here.\n" + strings.Repeat("\n", height-1)
 	}
 
+	filteredDeltas := m.getFilteredDeltas()
+	if len(filteredDeltas) == 0 {
+		return "  No delta changes match the current filter.\n" + strings.Repeat("\n", height-1)
+	}
+
 	var s strings.Builder
 	col1Width := 8
 	col2Width := 6
@@ -581,26 +651,16 @@ func (m *Model) renderDeltaView(height int) string {
 		col5Width, columnHeaderStyle.Render("Length(cM)"))
 	s.WriteString(headerRow + "\n")
 
-	adds := m.deltaBlock.Adds
-	dels := m.deltaBlock.Dels
-	totalDeltas := len(adds) + len(dels)
-
 	// Adjust boundary for viewport
 	endIdx := m.scrollOffset + height
-	if endIdx > totalDeltas {
-		endIdx = totalDeltas
+	if endIdx > len(filteredDeltas) {
+		endIdx = len(filteredDeltas)
 	}
 
 	for i := m.scrollOffset; i < endIdx; i++ {
-		var isAdd bool
-		var p ibdf.IBDPair
-		if i < len(adds) {
-			isAdd = true
-			p = adds[i]
-		} else {
-			isAdd = false
-			p = dels[i-len(adds)]
-		}
+		item := filteredDeltas[i]
+		isAdd := item.IsAdd
+		p := item.Pair
 
 		s1 := m.sampleName(p.P1)
 		s2 := m.sampleName(p.P2)
@@ -656,6 +716,7 @@ func (m *Model) renderHelpView(height int) string {
 		"  [                 - Jump backward to nearest checkpoint",
 		"  ]                 - Jump forward to next checkpoint",
 		"  d                 - Toggle view: Active Pairs vs Delta Details",
+		"  t                 - Cycle Delta Type filter: BOTH -> ADD -> DEL (Delta view only)",
 		"  /                 - Open search prompt",
 		"                      (Enter bp position to jump, or text to filter pairs)",
 		"  Esc               - Clear active text filter",
@@ -685,6 +746,9 @@ func (m *Model) renderStatusBar() string {
 	} else {
 		// Navigation tips
 		tip := "[Left/Right] Bp  [Up/Down] Scroll  [/] Search  [d] Toggle Delta  [?]: Help"
+		if m.mode == modeDeltas {
+			tip = "[Left/Right] Bp  [Up/Down] Scroll  [/] Search  [d] Toggle Delta  [t] Cycle Type  [?]: Help"
+		}
 		s = statusStyle.Render(" " + tip + " ")
 	}
 	return s
