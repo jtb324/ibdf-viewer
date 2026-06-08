@@ -1,0 +1,9 @@
+# build directories
+build/
+
+# context files
+context
+claude_ctx
+gemini_ctx
+
+
