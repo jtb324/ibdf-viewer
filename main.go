@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jtb324/ibdf-viewer/pkg/ibdf"
@@ -44,6 +45,10 @@ func detectSamplesFile(ibdfPath string) (string, error) {
 
 func main() {
 	var ibdfFile string
+
+	cli.VersionPrinter = func(cmd *cli.Command) {
+		fmt.Printf("%s - version: %s (Go version: %s)\n", cmd.Root().Name, cmd.Root().Version, runtime.Version())
+	}
 	cmd := &cli.Command{
 		Name:    "IBDF file viewer",
 		Usage:   "TUI to view the ibdf binary files",
