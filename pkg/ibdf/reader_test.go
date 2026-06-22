@@ -3,6 +3,7 @@ package ibdf
 import (
 	"bytes"
 	"encoding/binary"
+	"os"
 	"testing"
 )
 
@@ -143,8 +144,17 @@ func TestReader(t *testing.T) {
 	copy(fileData[0:64], headerBuf.Bytes())
 
 	// --- 8. Run Tests on Reader ---
-	readerAt := bytes.NewReader(fileData)
-	r, err := NewReader(readerAt)
+	tmpFile, err := os.CreateTemp("", "ibdf-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	if _, err := tmpFile.Write(fileData); err != nil {
+		t.Fatalf("Failed to write to temp file: %v", err)
+	}
+	tmpFile.Close()
+
+	r, err := NewReader(tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to create reader: %v", err)
 	}

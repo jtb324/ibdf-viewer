@@ -101,10 +101,11 @@ type Model struct {
 	deltaFilter deltaFilter
 
 	// Search/Filter state
-	searchActive bool
-	searchBuffer string
-	searchFilter string // active filter text
-	searchError  string
+	searchActive   bool
+	searchBuffer   string
+	searchFilter   string // active filter text
+	compiledFilter ibdf.Filter
+	searchError    string
 
 	err error
 }
@@ -243,44 +244,58 @@ func (m *Model) getFilteredDeltas() []deltaItem {
 		return nil
 	}
 
-	filterLower := strings.ToLower(m.searchFilter)
-	items := make([]deltaItem, 0)
-
-	// Process Adds
+	// Gather all items according to m.deltaFilter
+	allItems := make([]deltaItem, 0)
 	if m.deltaFilter == filterBoth || m.deltaFilter == filterAddsOnly {
 		for _, p := range m.deltaBlock.Adds {
-			if filterLower != "" {
-				s1 := strings.ToLower(m.sampleName(p.P1))
-				s2 := strings.ToLower(m.sampleName(p.P2))
-				if !strings.Contains(s1, filterLower) && !strings.Contains(s2, filterLower) {
-					continue
-				}
-			}
-			items = append(items, deltaItem{IsAdd: true, Pair: p})
+			allItems = append(allItems, deltaItem{IsAdd: true, Pair: p})
 		}
 	}
-
-	// Process Dels
 	if m.deltaFilter == filterBoth || m.deltaFilter == filterDelsOnly {
 		for _, p := range m.deltaBlock.Dels {
-			if filterLower != "" {
-				s1 := strings.ToLower(m.sampleName(p.P1))
-				s2 := strings.ToLower(m.sampleName(p.P2))
-				if !strings.Contains(s1, filterLower) && !strings.Contains(s2, filterLower) {
-					continue
-				}
-			}
-			items = append(items, deltaItem{IsAdd: false, Pair: p})
+			allItems = append(allItems, deltaItem{IsAdd: false, Pair: p})
 		}
 	}
 
-	return items
+	if m.searchFilter == "" {
+		return allItems
+	}
+
+	filtered := make([]deltaItem, 0)
+	if m.compiledFilter != nil {
+		for i, item := range allItems {
+			if m.compiledFilter.Match(item.Pair, i+1, m.samples) {
+				filtered = append(filtered, item)
+			}
+		}
+		return filtered
+	}
+
+	filterLower := strings.ToLower(m.searchFilter)
+	for _, item := range allItems {
+		s1 := strings.ToLower(m.sampleName(item.Pair.P1))
+		s2 := strings.ToLower(m.sampleName(item.Pair.P2))
+		if strings.Contains(s1, filterLower) || strings.Contains(s2, filterLower) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 // getFilteredPairs returns pairs matching search filter
 func (m *Model) getFilteredPairs() []ibdf.IBDPair {
 	if m.searchFilter == "" {
 		return m.activePairs
+	}
+
+	if m.compiledFilter != nil {
+		filtered := make([]ibdf.IBDPair, 0)
+		for i, p := range m.activePairs {
+			if m.compiledFilter.Match(p, i+1, m.samples) {
+				filtered = append(filtered, p)
+			}
+		}
+		return filtered
 	}
 
 	filterLower := strings.ToLower(m.searchFilter)
@@ -397,6 +412,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			// Clear filter
 			m.searchFilter = ""
+			m.compiledFilter = nil
+			m.searchError = ""
 
 		case "?":
 			if m.mode == modeHelp {
@@ -463,6 +480,8 @@ func (m *Model) executeSearch() {
 	query := strings.TrimSpace(m.searchBuffer)
 	if query == "" {
 		m.searchFilter = ""
+		m.compiledFilter = nil
+		m.searchError = ""
 		return
 	}
 
@@ -477,8 +496,32 @@ func (m *Model) executeSearch() {
 		return
 	}
 
-	// Otherwise, treat as sample name filter
+	// Try parsing as SQL expression first
+	filter, err := ibdf.ParseFilter(query)
+	if err == nil {
+		m.searchFilter = query
+		m.compiledFilter = filter
+		m.searchError = ""
+		return
+	}
+
+	// If there's an error, check if they intended to write a query, if so display the syntax/validation error
+	lowerQuery := strings.ToLower(query)
+	hasSQLSig := strings.ContainsAny(query, "=><!") ||
+		strings.Contains(lowerQuery, "like") ||
+		strings.Contains(lowerQuery, "and") ||
+		strings.Contains(lowerQuery, "or") ||
+		strings.Contains(lowerQuery, "not")
+
+	if hasSQLSig {
+		m.searchError = err.Error()
+		return
+	}
+
+	// Otherwise, fallback to basic substring match
 	m.searchFilter = query
+	m.compiledFilter = nil
+	m.searchError = ""
 }
 
 func (m *Model) binarySearchBpPos(pos uint64) int {

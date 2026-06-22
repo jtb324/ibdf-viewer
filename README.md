@@ -20,7 +20,15 @@ An interactive terminal pager (TUI) for inspecting **Identity-by-Descent Binary 
 
 ### Installation
 
-We recommend just download the binary for the correct architecture from GitHub
+#### Method 1: Pre-compiled Binaries (Recommended)
+We recommend downloading the compiled binary for your architecture from the GitHub Releases page.
+
+#### Method 2: Installing with Go Toolchain (Alternative)
+You can compile and install the application directly into your `$GOPATH/bin` using the Go command-line tool (note that this requires a Go installation on your system):
+
+```bash
+go install github.com/jtb324/ibdf-viewer@latest
+```
 
 ### Building the Binary
 
@@ -131,15 +139,41 @@ Navigate the viewer using the following shortcuts (VIM navigation, such as h,j,k
 
 ## Search & Filtering
 
-Pressing **`/`** activates the search bar at the bottom of the screen. You can input two types of queries:
+Pressing **`/`** activates the search/filter bar at the bottom of the screen. You can input three types of queries:
 
-1. **Genomic Base-Pair Coordinate**:
-   - Enter a number (e.g., `14203500` or `14,203,500`) and press **`Enter`**.
-   - The viewer will search the index and jump to the breakpoint closest to that position.
-2. **Sample Name Filter**:
-   - Enter a text string (e.g., `HG001` or `sample_name`) and press **`Enter`**.
-   - The view will filter the scrollable list to display only IBD pairs where at least one of the samples matches your search query.
-   - Press **`Esc`** while in the main view to clear the filter and display all pairs.
+### 1. Genomic Base-Pair Coordinate
+* Enter a number (e.g., `14203500` or `14,203,500`) and press **`Enter`**.
+* The viewer will search the index and jump to the breakpoint closest to that position.
+
+### 2. SQL-like Query Filter
+You can input SQL-like query conditions to filter the visible table rows. The filter is parsed into an AST and evaluated programmatically in memory (which also prevents any security/SQL injection risks).
+
+#### Supported Columns & Aliases
+* **`Row`** (alias: `row`): The 1-indexed row number of the pair in the current active set (e.g., `row <= 10`).
+* **`Sample 1`** (aliases: `sample1`, `s1`, `p1`, `"Sample 1"`, `` `Sample 1` ``): The name of the first sample.
+* **`Sample 2`** (aliases: `sample2`, `s2`, `p2`, `"Sample 2"`, `` `Sample 2` ``): The name of the second sample.
+* **`Sample`** (aliases: `sample`, `s`): A helper that matches **either** `Sample 1` or `Sample 2`.
+* **`Length(cM)`** (aliases: `length`, `cm`, `"Length(cM)"`, `` `Length(cM)` ``): The centiMorgan length of the IBD segment.
+
+#### Supported Operators
+* **Comparisons**: `=`, `!=`, `>`, `>=`, `<`, `<=`, `LIKE` (case-insensitive substring match using `%` wildcards).
+* **Logicals**: `AND`, `OR`, `NOT`.
+* **Grouping**: Parentheses `( )` to enforce operator precedence.
+
+#### Example SQL Filters
+* Show segments of at least 5 cM: `length >= 5`
+* Show segments between 3.5 cM and 10 cM: `cm > 3.5 AND cm < 10`
+* Show segments involving sample `HG00096`: `sample = 'HG00096'`
+* Show segments involving any sample starting with `NA`: `sample LIKE 'NA%'`
+* Show segments where `Sample 1` matches `HG00` and length is greater than 10 cM: `s1 LIKE '%HG00%' AND length > 10`
+* Complex grouping: `(s1 = 'HG00096' OR s2 = 'HG00096') AND length >= 12.5`
+
+*Note: If the query has any syntax errors or refers to invalid columns, a helpful validation error will be displayed in the status bar (e.g., `invalid column name "age"`).*
+
+### 3. Simple Sample Name Filter (Fallback)
+* If your query does not contain SQL operators (such as `=`, `>`, `like`, etc.), it automatically falls back to matching the sample names as a substring.
+* For example, typing `HG001` and pressing **`Enter`** will display all rows where either `Sample 1` or `Sample 2` contains `HG001`.
+* Press **`Esc`** while in the main view to clear the filter and display all pairs.
 
 ---
 
@@ -154,4 +188,6 @@ If you do not specify a path via the `-s`/`--samples` flag, the viewer will atte
 1. **`<base_name>.samples`** (e.g., if viewing `chr15.ibdf`, it checks for `chr15.samples`).
 2. **`<base_name>.ibdf.samples`** (e.g., checks for `chr15.ibdf.samples`).
 
-If no samples file is found
+If no samples file is found:
+*   **During Auto-Detection**: The application will terminate immediately with a fatal error message instructing you to place the `.samples` file in the same directory or supply its path manually via the `-s`/`--samples` flag.
+*   **During Explicit Load**: If you explicitly supplied a path that cannot be read, the program prints a warning to `stderr` and launches anyway, falling back to displaying sample names as generic placeholders: `Sample_0`, `Sample_1`, `Sample_2`, etc.
