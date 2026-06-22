@@ -15,8 +15,12 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+// We are going to use a linker flag to override this variable with the actual version
+// so the value inside doesn't matter
+var Version = "development"
+
 // Make a sentinel error to represent the samples file not being found
-var SamplesFileNotFound = errors.New("Samples file not found")
+var SamplesFileNotFound = errors.New("samples file not found")
 
 // detectSamplesFile attempts to locate a companion samples file
 func detectSamplesFile(ibdfPath string) (string, error) {
@@ -41,7 +45,9 @@ func detectSamplesFile(ibdfPath string) (string, error) {
 func main() {
 	var ibdfFile string
 	cmd := &cli.Command{
-		Usage: "TUI to view the ibdf binary files",
+		Name:    "IBDF file viewer",
+		Usage:   "TUI to view the ibdf binary files",
+		Version: Version,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "samples",
